@@ -1,0 +1,464 @@
+---
+title: 'Statistical Computing: Relational Databases (TA VERSION)'
+author: "TA: Daniel Zhu"
+date: "Week of Tuesday October 10, 2023"
+output: pdf_document
+---
+
+```{r, include=FALSE}
+# A hook to wrap output based on a linewidth chunk option
+# From https://github.com/yihui/knitr-examples/blob/master/077-wrap-output.Rmd
+library(knitr)
+hook_output = knit_hooks$get('output')
+knit_hooks$set(output = function(x, options) {
+  # this hook is used only when the linewidth option is not NULL
+  if (!is.null(n <- options$linewidth)) {
+    x = knitr:::split_lines(x)
+    # any lines wider than n should be wrapped
+    if (any(nchar(x) > n)) x = strwrap(x, width = n)
+    x = paste(x, collapse = '\n')
+  }
+  hook_output(x, options)
+})
+# NOTE: Caching seems like it messes with the SQL connection! Turn it off ...
+opts_chunk$set(cache=FALSE, autodep=FALSE, cache.comments=FALSE, linewidth=79)
+```
+
+**This week's agenda**: practicing SQLite queries, performing simple computations and joins, and testing our understanding by writing equivalent R code for these database manipulations.
+
+Lahman baseball database
+===
+
+Q1. Practice with SQL data extraction
+===
+
+- **1a.** Install the packages `DBI`, `RSQLite` if you haven't done so already, and load them into your R session. Using `dbDriver()`, `dbConnect()`, set up a connection called `con` the SQLite database stored in lahman2016.sqlite.  Then, use `dbListTables()` to list the tables in the database.
+
+```{r q1a}
+library(DBI) 
+library(RSQLite)
+
+driver = dbDriver("SQLite")
+con = dbConnect(driver,dbname="lahman2016.sqlite")
+
+dbListTables(con)
+```
+
+- **1b.** Using `dbReadTable()`, grab the table named "Batting" and save it as a data frame in your R session, called `batting`. Check that `batting` is indeed a data frame, and that it has dimension 102816 x 24. 
+
+```{r q1b}
+batting = dbReadTable(con,"Batting")
+class(batting)
+dim(batting)
+```
+
+- **1c.** Remove `eval=FALSE` from the preamble in the R code chunks below. Then, after each SQL query (each call to `dbGetQuery()`), explain in words what is being extracted, and write one line of base R code (sometimes you might need two lines) to get the same result using the `batting` data frame.
+
+```{r}
+dbGetQuery(con, paste("SELECT playerID, yearID, AB, H, HR",
+                      "FROM Batting",
+                      "ORDER BY yearID",
+                      "LIMIT 10"))
+```
+**Answer: The query retrieves the "playerID," "yearID," "AB," "H," and "HR" columns from our stored dataset "Batting" for the top 10 records and arranges them in ascending order based on the "yearID" column.**
+
+```{r q1c1}
+head(batting[,c("playerID","yearID","AB","H","HR")][order(batting$yearID),],10)
+```
+
+```{r}
+dbGetQuery(con, paste("SELECT playerID, yearID, AB, H, HR",
+                      "FROM Batting",
+                      "ORDER BY HR DESC",
+                      "LIMIT 10"))
+```
+**Answer: The query is selecting the "playerID," "yearID," "AB," "H," and "HR" columns from our stored dataset "Batting" for the top 10 entries with the highest number of home runs, and it arranges them in descending order based on the "HR" column.**
+
+```{r q1c2}
+head(batting[,c("playerID","yearID","AB","H","HR")][order(-batting$HR),],10)
+```
+
+```{r}
+dbGetQuery(con, paste("SELECT playerID, yearID, AB, H, HR",
+                      "FROM Batting",
+                      "WHERE HR > 55",
+                      "ORDER BY HR DESC"))
+```
+
+```{r q1c3}
+temp = batting[,c("playerID","yearID","AB","H","HR")][batting$HR > 55,]
+
+temp[order(-temp$HR),]
+```
+**Answer: The query retrieves the "playerID," "yearID," "AB," "H," and "HR" columns from our stored dataset "Batting" for all entries where the number of home runs is greater than 55. It then arranges them in descending order based on the "HR" column.**
+
+```{r}
+dbGetQuery(con, paste("SELECT playerID, yearID, AB, H, HR",
+                      "FROM Batting",
+                      "WHERE yearID >= 1990 AND yearID <= 2000",
+                      "ORDER BY HR DESC",
+                      "LIMIT 10"))
+```
+**Answer: The query extracts the "playerID," "yearID," "AB," "H," and "HR" columns from our stored dataset "Batting" for all entries with years between 1990 and 2000. It then identifies the top 10 entries with the most home runs and ranks them in descending order based on the "HR" column.**
+
+```{r q1c4}
+temp2 = batting[,c("playerID","yearID","AB","H"
+                   ,"HR")][batting$yearID >= 1990 & batting$yearID <= 2000,]
+
+head(temp2[order(-temp2$HR),],10)
+```
+
+- **1d.** Perform the same computations in the last question, but now using `dplyr` verbs and pipes. 
+
+```{r q1d}
+library(dplyr)
+
+#q1c1
+batting %>%
+  select(playerID, yearID, AB, H, HR) %>%
+  arrange(yearID) %>%
+  head(10)
+
+#q1c2
+batting %>%
+  select(playerID, yearID, AB, H, HR) %>%
+  arrange(desc(HR)) %>%
+  head(10)
+
+#q1c3
+batting %>%
+  select(playerID, yearID, AB, H, HR) %>%
+  filter(HR > 55) %>%
+  arrange(desc(HR))
+
+#q1c4
+batting %>%
+  select(playerID, yearID, AB, H, HR) %>%
+  filter(yearID >= 1990, yearID <= 2000) %>%
+  arrange(desc(HR)) %>%
+  head(10)
+```
+
+Q2. Practice with SQL computations
+===
+
+- **2a.** As before, remove `eval=FALSE` from the preamble in the following R code chunks. Then, after each SQL query, explain in words what is being extracted, and write one line of base R code to get the same result using the `batting` data frame. Hint: often you'll have to use `na.rm=TRUE` to deal with NA values, for example `mean(x, na.rm=TRUE)` computes the mean of a vector `x` after removing any NA values.
+
+```{r}
+dbGetQuery(con, paste("SELECT AVG(HR)",
+                      "FROM Batting"))
+```
+**Answer: This query calculated the average (mean) of the home runs from the dataset entries.**
+
+```{r q2a1}
+mean(batting$HR)
+```
+**Answer: This query computed the total sum of home runs hit across the entire dataset.**
+
+```{r}
+dbGetQuery(con, paste("SELECT SUM(HR)",
+                      "FROM Batting"))
+```
+**Answer: This query takes the sum of home run hits across the entire dataset**
+
+```{r q2a2}
+sum(batting$HR)
+```
+
+```{r}
+dbGetQuery(con, paste("SELECT playerID, yearID, teamID, MAX(HR)",
+                      "FROM Batting"))
+```
+**Answer: This query retrieved the "playerID," "yearID," "teamID," and "HR" values for the entry that had the highest number of home runs across the dataset.**
+
+```{r q2a3}
+batting[which.max(batting$HR),c(1,2,4,13)]
+```
+
+```{r}
+dbGetQuery(con, paste("SELECT AVG(HR)",
+                      "FROM Batting",
+                      "WHERE yearID >= 1990"))
+```
+
+```{r q2a4}
+mean(batting[batting$yearID >= 1999,]$HR)
+```
+**Answer: This query calculated the average (mean) of home runs from the dataset entries with years after 1990.**
+
+- **2b.** Again, after each SQL query explain in words what is being extracted, and write one line (or two lines) of R code to get the same result using the `batting` data frame. You may use base R, `dplyr`, pipes, or whatever means you want.
+
+```{r}
+dbGetQuery(con, paste("SELECT teamID, AVG(HR)",
+                      "FROM Batting",
+                      "WHERE yearID >= 1990",
+                      "GROUP BY teamID",
+                      "LIMIT 5"))
+```
+**Answer: This query retrieved the average number of home runs per team starting from the year 1990, along with the corresponding team names, and displayed the first five teams in alphabetical order.**
+
+```{r q2b1}
+batting %>%
+  filter(yearID >= 1990) %>%
+  group_by(teamID) %>%
+  summarize(meanHR = mean(HR,na.rm=TRUE)) %>%
+  head(5)
+```
+
+```{r}
+dbGetQuery(con, paste("SELECT teamID, AVG(HR)",
+                      "FROM Batting",
+                      "WHERE yearID < 1960",
+                      "GROUP BY teamID",
+                      "ORDER BY AVG(HR) DESC",
+                      "LIMIT 5"))
+```
+**Answer: This query extracted the team name and the highest 5 average home run values, as the entries were sorted in descending order.**
+
+```{r q2b2}
+batting %>%
+  filter(yearID < 1960) %>%
+  group_by(teamID) %>%
+  summarize(meanHR = mean(HR,na.rm = TRUE)) %>%
+  arrange(-meanHR) %>%
+  head(5)
+```
+
+```{r}
+dbGetQuery(con, paste("SELECT teamID, yearID, AVG(HR)",
+                      "FROM Batting",
+                      "WHERE yearID == 1991 OR yearID == 1992",
+                      "GROUP BY teamID, yearID",
+                      "ORDER BY AVG(HR) DESC",
+                      "LIMIT 15"))
+```
+**Answer: This query filters the entries for the years 1991 and 1992, groups them by year and team, calculates the average home runs within each group, and then displays the top 15 average home run values in descending order.**
+
+```{r q2b3}
+batting %>%
+  filter(yearID == 1991 | yearID == 1992) %>%
+  group_by(teamID,yearID) %>%
+  summarize(meanHR = mean(HR,na.rm = TRUE)) %>%
+  arrange(meanHR) %>%
+  head(15)
+```
+
+Q3. More practice with computations
+===
+
+- **3a.** Use a SQL query on the "Batting" table to calculate each player's average number of hits (`H`) over the seasons they played, and display the players with the 10 highest hit averages, along with their hit averages. Hint: `AVG()`, `GROUP BY`, `ORDER BY`. 
+
+```{r q3a}
+dbGetQuery(con, paste("SELECT playerID, AVG(H)",
+                      "FROM Batting",
+                      "GROUP BY playerID",
+                      "ORDER BY AVG(H) DESC",
+                      "LIMIT 10"))
+```
+
+- **3b.** Calculate the same as in the last question, but now display all players whose hit averages are above 170. Hint: `HAVING`.
+
+```{r q3b}
+dbGetQuery(con, paste("SELECT playerID, AVG(H)",
+                      "FROM Batting",
+                      "GROUP BY playerID",
+                      "HAVING AVG(H) > 170",
+                      "ORDER BY AVG(H) DESC"))
+```
+
+- **3c.** Calculate the same as in the last question, but now display for all players with hit averages above 170----in addition to the player's ID and his batting average---the last year in which each player played. 
+
+```{r q3c}
+dbGetQuery(con, paste("SELECT playerID, AVG(H), MAX(yearID)",
+                      "FROM Batting",
+                      "GROUP BY playerID",
+                      "HAVING AVG(H) > 170",
+                      "ORDER BY AVG(H) DESC"))
+```
+
+Q4. Practice with SQL join operations
+===
+
+- **4a.** Using `JOIN`, merge the "Batting" and "Salaries" tables based on matching the `yearID`, `playerID` pairs. Display the year, player, salary, and number of hits for the first 10 records.
+
+```{r q4a}
+dbGetQuery(con, paste("SELECT yearID, playerID, salary, H",
+                      "FROM Batting JOIN Salaries USING(yearID,playerID)",
+                      "GROUP BY playerID",
+                      "LIMIT 10"))
+```
+
+- **4b.** Building off of the code from the end of lecture, which does something similar, compute the average salaries for the players with the top 10 highest hit averages.
+
+```{r q4b}
+dbGetQuery(con, paste("SELECT playerID, AVG(HR), AVG(salary)",
+                      "FROM Batting JOIN Salaries USING(yearID, playerID)",
+                      "GROUP BY playerID",
+                      "ORDER BY Avg(HR) DESC",
+                      "LIMIT 10"))
+```
+
+- **4c.** Compute the hit averages for the players with the top 10 highest salaries. Hint: this should only require a very small tweak to the code you wrote for the last question.
+
+```{r q4c}
+dbGetQuery(con, paste("SELECT playerID, AVG(HR), AVG(salary)",
+                      "FROM Batting JOIN Salaries USING(yearID, playerID)",
+                      "GROUP BY playerID",
+                      "ORDER BY Avg(Salary) DESC",
+                      "LIMIT 10"))
+```
+
+- **4d.** Using the "Fielding" table, list the 10 worst (highest) number of errors (`E`) committed by a player in a season, only considering the year 2000 and later. In addition to the number of errors, list the year and player ID for each record.
+
+```{r q4d}
+dbGetQuery(con, paste("SELECT playerID, yearID, E",
+                      "FROM Fielding",
+                      "WHERE yearID >= 2000",
+                      "ORDER BY E DESC",
+                      "LIMIT 10"))
+```
+
+- **4e.** By appropriately merging the "Fielding" and "Salaries" tables, list the salaries for each record that you extracted in the last question. Then, answer the following question: what was the highest salary paid to a player who made at least 30 errors in a season, after 2000?
+
+```{r q4e}
+dbGetQuery(con, paste("SELECT playerID, yearID, E, salary",
+                      "FROM Fielding JOIN Salaries USING(yearID,playerID)",
+                      "WHERE yearID >= 2000 AND E>30",
+                      "ORDER BY E DESC",
+                      "LIMIT 10"))
+
+dbGetQuery(con, paste("SELECT playerID, yearID, E, salary",
+                      "FROM Fielding JOIN Salaries USING(yearID,playerID)",
+                      "WHERE yearID >= 2000 AND E>30",
+                      "ORDER BY salary DESC",
+                      "LIMIT 1"))
+```
+**Answer: The player made $2,200,000**
+
+Q5. All about the money
+===
+
+- **5a.** Use a SQL query on the "Salaries" table to compute the payroll (total of salaries) for each team in the year 2015, and display the 3 teams with the highest payrolls. Do the same, but display the 3 teams with the lowest payroll (ouch!). 
+
+```{r q5a}
+dbGetQuery(con, paste("SELECT teamID, sum(salary)",
+                      "FROM Salaries",
+                      "WHERE yearID == 2015",
+                      "GROUP BY teamID",
+                      "ORDER BY sum(salary) DESC",
+                      "LIMIT 3"))
+
+dbGetQuery(con, paste("SELECT teamID, sum(salary)",
+                      "FROM Salaries",
+                      "WHERE yearID == 2015",
+                      "GROUP BY teamID",
+                      "ORDER BY sum(salary)",
+                      "LIMIT 3"))
+```
+
+- **5b.** Use a SQL query to compute the total payroll for each team, added up over the years between 1985 and 2016. Hint: `dbGetQuery()` actually returns a data frame. You should have a data frame of dimension 46 x 2, and the 2 columns should display the team ID and the payroll. Check that your data frame has the right dimensions and display its first 10 rows. Then, answer: what team has the highest total payroll? The lowest payroll? Where do the Pirates rank?
+
+```{r q5b}
+teamPayrolls=dbGetQuery(con, paste("SELECT teamID,
+                                    sum(salary) AS sumPayroll",
+                                    "FROM Salaries",
+                                    "WHERE YearID >= 1985 AND YearID <= 2016",
+                                    "GROUP BY teamID"))
+
+dim(teamPayrolls)
+head(teamPayrolls,10)
+head(arrange(teamPayrolls[,c(1,2)],-sumPayroll,),1)
+head(arrange(teamPayrolls[,c(1,2)],sumPayroll,),1)
+ teamPayrolls %>% arrange(desc(sumPayroll))
+```
+**Answer: The New York Yankees, represented by "NYA," consistently maintain the highest payroll, while the Tampa Bay Rays have consistently had the smallest payroll. Additionally, the Pittsburgh Pirates have consistently ranked 27th in terms of payroll.**
+
+- **5c.** Use a SQL query to compute the payroll for each team, separately for each year in between 1985 and 2016. Hint: `GROUP BY` can take two arguments, separated by a comma. You should have a data frame of dimension 918 x 3, and the 3 columns should be display the team ID, year, and payroll. Check that your data frame has the proper dimensions, and display its last 10 rows.
+
+```{r q5c}
+payByYear=dbGetQuery(con, paste("SELECT teamID, yearID,
+                                 sum(salary) AS sumPayroll",
+                                 "FROM Salaries",
+                                 "WHERE YearID >= 1985 AND YearID <= 2016",
+                                 "GROUP BY teamID, yearID"))
+dim(payByYear)
+tail(payByYear,10)
+```
+**Answer: Seems right**
+
+- **5d.** Plot the Pittsburgh Pirates' payroll over time (i.e., over the years 1985 to 2016), with appropriately labeled axes and an appropriate title. What is the trend that you see?
+
+```{r q5d}
+Pirates = payByYear %>%
+  filter(teamID == "PIT")
+
+plot(Pirates$yearID, Pirates$sumPayroll,
+     main = "Pittsburgh Pirates Team Payroll By Season",
+     xlab = "Year",
+     ylab = "Team's Total Payroll")
+```
+**Answer: Over the years, the payroll data exhibits fluctuations, suggesting potential seasons with stronger player-team dynamics. However, the overarching trend reveals a consistent increase in payrolls, aligning with the broader context of inflation and higher player salaries across the league.**
+
+Q6. Batting averages (optional)
+===
+
+- **6a.** Use a SQL query to calculate the top 10 best batting averages achieved by a player in any season after 1940. Note: batting average is the number of hits (`H`) divided by number of at bats (`AB`) achieved by a player in a given season, but (let's say) it is only defined for players that have at least 400 at bats in that season. Your resulting data frame from the SQL query should be 10 x 3, with the 3 columns displaying the playerID, yearID, and batting average.
+
+```{r q6a}
+query6a = paste("SELECT playerID, yearID, CAST(SUM(H) AS REAL) / 
+                 CAST(SUM(AB) AS REAL) AS batting_average",
+                 "FROM Batting",
+                 "WHERE yearID > 1940 AND AB >= 400",
+                 "GROUP BY playerID, yearID",
+                 "ORDER BY batting_average DESC",
+                 "LIMIT 10")
+
+dbGetQuery(con, query6a)
+```
+
+- **6b.** Compute batting averages as described above, but now plot a histogram of all of these batting averages (aggregated over all players and all seasons after 1940), with an appropriate title. Use a large value of the `breaks` argument to get a good sense of the shape of the histogram. Does this look like a normal distribution to you? What is the estimated mean and the standard deviation? 
+
+```{r q6b}
+
+query6b = paste("SELECT CAST(SUM(H) AS REAL) / CAST(SUM(AB) AS REAL) 
+                 AS batting_average",
+                 "FROM Batting",
+                 "WHERE yearID > 1940 AND AB >= 400",
+                 "GROUP BY playerID, yearID")
+
+battingAverages = dbGetQuery(con, query6b)
+
+hist(battingAverages$batting_average, breaks = 50, main = "Distribution of Batting Averages",
+     xlab = "Batting Average", ylab = "Frequency")
+
+meanBA = mean(battingAverages$batting_average)
+std = sd(battingAverages$batting_average)
+
+
+cat("Estimated Mean:", meanBA, "\n")
+cat("Standard Deviation:", std, "\n")
+```
+**Answer: Yes the graph looks normally distribute with estimated mean being 0.2753335 with a standard deviation of 0.02815311 **
+
+- **6c.** Modifying your last SQL query so that you also extract, in addition to the batting averages, the number of home runs (for all players and all seasons after 1940). Produce a scatterplot of the number of home runs versus the batting average, with appropriate axes labels and an appropriate title. What does the general trend appear to be? 
+
+```{r q6c}
+query6c = paste("SELECT CAST(SUM(H) AS REAL) / CAST(SUM(AB) AS REAL) AS batting_average,
+                 SUM(HR) AS home_runs",
+                 "FROM Batting",
+                 "WHERE yearID > 1940 AND AB >= 400",
+                 "GROUP BY playerID, yearID")
+
+battingData = dbGetQuery(con, query6c)
+
+plot(battingData$batting_average, battingData$home_runs, 
+     xlab = "Batting Average", ylab = "Number of Home Runs",
+     main = "Batting Average vs. Home Runs")
+```
+**Answer: It seems like there is a very large concentration of data points around 0.25 and 0.30 BA with a clumped distribution of HR and BA convergences**
+
+Remove the `eval=FALSE` below to close the database connection.
+
+```{r}
+dbDisconnect(con)
+```

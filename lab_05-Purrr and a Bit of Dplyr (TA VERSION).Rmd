@@ -1,0 +1,408 @@
+---
+title: 'Statistical Computing: Purrr and a Bit of Dplyr (TA VERSION)'
+author: "TA: Daniel Zhu"
+date: "Week of Tuesday September 26, 2023"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+```{r, include=FALSE}
+# A hook to wrap output based on a linewidth chunk option
+# From https://github.com/yihui/knitr-examples/blob/master/077-wrap-output.Rmd
+library(knitr)
+hook_output = knit_hooks$get('output')
+knit_hooks$set(output = function(x, options) {
+  # this hook is used only when the linewidth option is not NULL
+  if (!is.null(n <- options$linewidth)) {
+    x = knitr:::split_lines(x)
+    # any lines wider than n should be wrapped
+    if (any(nchar(x) > n)) x = strwrap(x, width = n)
+    x = paste(x, collapse = '\n')
+  }
+  hook_output(x, options)
+})
+opts_chunk$set(cache=TRUE, autodep=TRUE, cache.comments=TRUE, linewidth=79)
+```
+
+**This week's agenda**: practicing how to use the map family of functions from `purrr`, and how to perform basic computations on data frames using `dplyr`.
+
+Installing and loading packages 
+===
+
+Below we install `tidyverse` which gives us the packages we need (`purrr` and `dplyr`) needed to complete this lab. We also install the `repurrrsive` package which has the Game of Thrones data set that we'll use for the first couple of questions. If you already have these packages installed, then you can of course skip this part. Note: *do not remove `eval=FALSE` from the below code chunk*, just run the lines in your console. You can also select "Tools" --> "Install Packages" from the RStudio menu. 
+
+```{r, eval=FALSE}
+install.packages("tidyverse")
+install.packages("repurrrsive")
+```
+
+Now we'll load these packages. Note: the code chunk below will cause errors if you try to knit this file without installing the packages first. Loading the `tidyverse` package in its entirety includes `plyr`, and this can cause namespace issues with the `dplyr` package. Better to just load only what you need.
+
+```{r}
+library(purrr)
+library(dplyr)
+library(repurrrsive)
+```
+
+Game of Thrones data set
+===
+
+Below we inspect a data set on the 30 characters from Game of Thrones from the `repurrrsive` package. It's stored in a list called `got_chars`, which is automatically loaded into your R session when you load the `repurrrsive`` package. 
+
+```{r}
+class(got_chars)
+length(got_chars)
+names(got_chars[[1]])
+got_chars[[1]]$name
+got_chars[[1]]$aliases
+```
+
+Q1. Warming up with map 
+===
+
+- **1a.** Using the map functions from the `purrr` package, extract the names of the characters in `got_chars` so that you produce a character vector of length 30.
+
+Do this three different ways:
+  
+  (i) using `map()`, defining a custom function on-the-fly, and casting the resulting list into an appropriate data type; 
+      
+  (ii) using one of the `map_***()` functions, but still defining a custom function on-the-fly;
+      
+  (iii) using one of the `map_***()` functions, and passing a string instead of a function (relying on its ability to define an appropriate extractor accordingly). 
+   
+   Store each of the results in a different vector and check that they are all identical.
+      
+```{r q1a}
+char_names1 = unlist(map(got_chars, function(char){char$name}))
+char_names2 = map_chr(got_chars, function(char){char$name})
+char_names3 = map_chr(got_chars,`[[`,"name")
+char_names4 = map_chr(got_chars,"name")
+
+setequal(char_names1,char_names2)
+setequal(char_names2,char_names3)
+setequal(char_names3,char_names4)
+```
+
+- **1b.** Produce an integer vector that represents how many allegiances each character holds. Do this with whichever map function you'd like, and print the result to the console. Then use this (and your extracted character names from the last question) to answer: which character holds the most allegiances? The least?
+
+```{r q1b}
+char_allies = map_int(got_chars, 
+                    function(teams){return(length(teams$allegiances))})
+min = min(char_allies)
+max = max(char_allies)
+
+char_most = map(got_chars,function(char){
+  if(length(char$allegiance)==max)
+    return(char$name)
+  })
+char_least = map(got_chars,function(char){
+  if(length(char$allegiance)==min)
+    return(char$name)
+  })
+
+char_most
+char_least
+```
+**Answer: Brienne of Tarth has the most allegiances, while the characters Will, Chett, Cressen, Varamyr, and Melisandre have the fewest allegiances**
+
+- **1c.** Run the code below in your console. What does it do?
+```{r, eval=FALSE}
+1:5 %in% 3:6
+```
+**Answer: The code given loops through the series to see if any of it's members are in the series 3:6**
+
+    Using the logic you can infer about the `%in%` operator (you can also read its help file), craft a single line of code to compute a Boolean vector of length 6 that checks whether the first Game of Thrones character, stored in `got_chars[[1]]`, has appeared in each of the 6 TV seasons. Print the result to the console.
+    
+```{r q1c}
+appeared = got_chars[[1]]$tvSeries %in% c("Season 1","Season 2","Season 3","Season 4","Season 5","Season 6")
+```
+    
+- **1d.** Run the two lines of code below in their console. What do they do?
+```{r, eval=FALSE}
+rbind(1:5, 6:10, 11:15)
+do.call(rbind, list(1:5, 6:10, 11:15))
+```
+**Answer: The code snippet above performs three iterations of a sequence containing five numbers each, and subsequently merges these three rows to create a 3x5 matrix.**    
+
+    Using the logic you can infer about the `do.call()` function (you can also read its help file), as well as the logic from the last question, complete the following task. Using `map()`, a custom-defined function, as well as some post-processing of its results, produce a matrix that has dimension 30 x 6, with each column representing a TV season, and each row a character. The matrix should have a value of `TRUE`  in position (i,j) if character i was in season j, and `FALSE` otherwise. Print the first 6 rows of the result to the console.
+
+```{r q1d}
+big_matrix = do.call(rbind, 
+map(got_chars, function(char){c("Season 1","Season 2",
+                                "Season 3","Season 4",
+                                "Season 5","Season 6") %in% char$tvSeries}))
+head(big_matrix,6)
+```
+
+- **Challenge.** Repeat the same task as in the last question, but using `map_df()` and no post-processing. The result will now be a data frame (not a matrix). Print the first 6 rows of the result to the console. Hint: `map_dfr()` will throw an error if it can't infer column names.
+
+```{r q1chal}
+result_df <- map_df(got_chars, ~ {
+  data.frame(
+    character = .x$name,
+    Season_1 = "Season 1" %in% .x$tvSeries,
+    Season_2 = "Season 2" %in% .x$tvSeries,
+    Season_3 = "Season 3" %in% .x$tvSeries,
+    Season_4 = "Season 4" %in% .x$tvSeries,
+    Season_5 = "Season 5" %in% .x$tvSeries,
+    Season_6 = "Season 6" %in% .x$tvSeries
+  )
+})
+
+head(result_df, 6)
+```
+
+Q2. Cultural studies
+===
+
+- **2a.** Using `map_dfr()`, create a data frame of dimension 30 x 5, whose columns represent, for each Game of Thrones character, their name, birth date, death date, gender, and culture. Store it as `got_df` and print the first 5 rows to the console.
+
+```{r q2a}
+got_df = map_dfr(got_chars,`[`,c("name","born","died","gender","culture"))
+
+tail(got_df,4)
+```
+
+- **2b.** Using `got_df`, show that you can compute whether each character is alive or not, and compare this to what is stored in `got_chars`, demonstrating that the two ways of checking whether each character is alive lead to equal results.
+
+```{r q2b}
+pulse1 = cbind(got_df$name,got_df$died)
+pulse2 = cbind(map_chr(got_chars,"name"),map_chr(got_chars,"died"))
+
+all.equal(pulse1,pulse2)
+```
+
+- **2c.** Using `filter()`, print the subset of the rows of `got_df` that correspond to Ironborn characters. Then print the subset that correspond to female Northmen. 
+
+```{r q2c}
+filter(got_df,culture == "Ironborn")
+
+filter(got_df, gender == "Female" & culture=="Northmen")
+```
+
+- **2d.** Create a matrix of dimension (number of cultures) x 2 that counts how many women and men there are in each culture appearing in `got_df`. Print the results to the console. Hint: what happens if you pass `table()` two arguments?
+
+```{r q2d}
+culture = table(got_df$culture,got_df$gender)
+culture
+```
+**Answer: Passing two arguments into the table results in two columns that correspond to the two provided arguments, and their values appear next to each other.**
+
+- **2e.** Using `group_by()` and `summarize()` on `got_df`, compute how many characters in each culture have died. Which culture---aside from the unknown category represented by ""---has the most deaths?
+
+```{r q2e}
+summarize(group_by(got_df,culture),Dead=length(which(died!="")))
+```
+**Answer: Among the rivermen, the culture experienced the highest mortality rate.**
+
+Rio Olympics data set
+===
+
+This is the Rio Olympics data set that we saw in Lab 3. In the next question, we're going to repeat some calculations from Lab 3 but using `dplyr`.
+
+```{r}
+rio = read.csv("https://www.stat.cmu.edu/~ftownes/teaching/36350/F23/data/rio.csv")
+```
+
+Q3. Practice with grouping and summarizing
+===
+
+- **3a.** Using `group_by()` and `summarize()`, compute how many athletes competed for each country in the `rio` data frame? Print the results for the first 10 countries to the console. Building off your answer, use an additional call to `filter()` to compute which country had the most number of athletes and how many that was. Hint: consider using `n()` from the `dplyr` package for the first part here.
+
+```{r q3a}
+summarize(group_by(rio,nationality),athletes=length(which(nationality!="")))
+
+filter(summarize(group_by(rio,nationality),athletes=length(id)),
+       athletes==max(athletes))
+```
+
+- **3b.** Using `group_by()`, `summarize()`, and `filter()`, compute which country had the most number of total medals and how many that was. 
+
+```{r q3b}
+filter(summarize(group_by(rio,nationality),total=sum(gold+silver+bronze)),
+       total==max(total))
+```
+**Answer: USA had the most gold medals with 264**
+
+- **3c.** Using `group_by()`, `summarize()`, and `filter()`, compute which country---among those with zero total medals---had the most number of athletes. Hint: you will need to modify your `summarize()` command to compute the number of athletes; you should look up the `dplyr` function 'n()'and you might need two calls to `filter()`.
+
+```{r q3c}
+filter(filter(summarize(group_by(rio,nationality),total=sum(bronze+silver+gold),
+                        athletes=length(id)),total==0),athletes==max(athletes))
+```
+**Answer: Chile had the most athletes with 42 amoungst countries who won no medals**
+
+- **3d.** Using---yes, you guessed it---`group_by()`, `summarize()`, and `filter()`, compute the average weight of athletes in each sport, separately for men and women, and report the two sport with the highest average weights (one for each of men and women). Hint: `group_by()` can accept more than one grouping variable. Also, consider using `na.rm=TRUE` as an additional argument to certain arithmetic summary functions so that they will not be thrown off by `NA` or `NaN` values.
+
+```{r q3d}
+weights = filter(summarize(group_by(rio,sport,sex),
+                           weight = mean(weight,na.rm=TRUE)), 
+                           weight == max(weight,na.rm=TRUE))
+
+summarize(group_by(rio,sport,sex),weight = mean(weight,na.rm=TRUE))
+```
+**Answer: Basketball was the heaviest sport for women at 75.35kg as it was for men too (100.297)**
+
+Fastest 100m sprint times
+===
+
+Below, we read two data sets of the 1000 fastest times ever recorded for the 100m sprint, in men's and women's track. We scraped this data from [http://www.alltime-athletics.com/m_100ok.htm](http://www.alltime-athletics.com/m_100ok.htm) and [http://www.alltime-athletics.com/w_100ok.htm](http://www.alltime-athletics.com/w_100ok.htm), in early September 2021. (Interestingly, the 2nd, 3rd, 4th, 7th, and 8th fastest women's times were all set at the most recent Tokyo Olympics, or after! Meanwhile, the top 10 men's times are all from about a decade ago.)
+
+```{r}
+sprint.m.df = read.table(
+  file="https://www.stat.cmu.edu/~ftownes/teaching/36350/F23/data/sprint.m.txt", 
+  sep="\t", quote="", header=TRUE)
+sprint.w.df = read.table(
+  file="https://www.stat.cmu.edu/~ftownes/teaching/36350/F23/data/sprint.w.txt", 
+  sep="\t", quote="", header=TRUE)
+```
+
+More practice with data frame computations 
+===
+
+- **4a.** Confirm that both `sprint.m.df` and `sprint.w.df` are data frames. Delete the `Rank` column from each data frame, then display the first and last 3 rows of each. 
+
+```{r q4a}
+class(sprint.m.df)
+class(sprint.w.df)
+
+sprint.m.df$Rank=NULL
+sprint.w.df$Rank=NULL
+
+head(sprint.m.df,3)
+tail(sprint.m.df,3)
+
+head(sprint.w.df,3)
+tail(sprint.w.df,3)
+```
+
+- **4b.** Recompute the ranks for the men's data set from the `Time` column and add them back as a `Rank` column to `sprint.m.df`. Do the same for the women's data set. After adding back the rank columns, print out the first 10 rows of each data frame, but only the `Time`, `Name`, `Date`, and `Rank` columns. Hint: consider using `rank()`.
+
+```{r q4b}
+mTimes=sprint.m.df$Time
+
+sprint.m.df$Rank<-rank(sprint.m.df$Time)
+sprint.w.df$Rank<-rank(sprint.w.df$Time)
+
+head(sprint.m.df[c(1,3,7,8)],10)
+head(sprint.w.df[c(1,3,7,8)],10)
+```
+
+- **4c.** Using base R functions, compute, for each country, the number of sprint times from this country that appear in the men's data set. Call the result `sprint.m.counts`. Do the same for the women's data set, and call the result `sprint.w.counts`. What are the 5 most represented countries, for the men, and for the women? (Interesting side note: go look up the population of Jamaica, compared to that of the US. Pretty impressive, eh?) 
+
+```{r q4c}
+sprint.m.counts=table(sprint.m.df$Country)
+head(sort(sprint.m.counts,decreasing=TRUE),5)
+
+sprint.w.counts=table(sprint.w.df$Country)
+head(sort(sprint.w.counts,decreasing=TRUE),5)
+```
+
+- **4d.** Repeat the same calculations as in last part but using `dplyr` functions, and print out again the 5 most represented countries for men and women. (No need to save new variables.) Hint: consider using `arrange()` from the `dplyr` library.
+
+```{r q4d}
+head(arrange(summarize(group_by(sprint.m.df,Country),
+                       times= length(Time)),desc(times)),5)
+
+head(arrange(summarize(group_by(sprint.w.df,Country),
+                       times= length(Time)),desc(times)),5)
+```
+
+- **4e.** Are there any countries that are represented by women but not by men, and if so, what are they? Vice versa, represented by men and not women? Hint: consider using the `%in%` operator. 
+
+```{r q4e}
+for (name in names(sprint.w.counts)) {
+if (!(name %in% names(sprint.m.counts)))
+    print(name)}
+"these countries had female sprinters only"
+
+for (name in names(sprint.m.counts)) {
+if (!(name %in% names(sprint.w.counts)))
+    print(name)}
+"these countries had male sprinters only"
+```
+
+Q5. Practice with grouping
+===
+
+- **5a.** Using `dplyr` functions, compute, for each country, the fastest time among athletes who come from that country. Do this for each of the men's and women's data sets, and display the first 10 rows of the result.
+
+```{r q5a}
+head(summarize(group_by(sprint.m.df,Country),Time=min(Time)),10)
+
+head(summarize(group_by(sprint.w.df,Country),Time=min(Time)),10)
+```
+
+- **5b.** With the most minor modification to your code possible, do the same computations as in the last part, but now display the first 10 results ordered by increasing time. Hint: recall `arrange()`.
+
+```{r q5b}
+men <- sprint.m.df %>%
+  group_by(Country) %>%
+  summarize(Time = min(Time)) %>%
+  arrange(Time) %>%
+  head(10)
+
+women <- sprint.w.df %>%
+  group_by(Country) %>%
+  summarize(Time = min(Time)) %>%
+  arrange(Time) %>%
+  head(10)
+
+men
+women
+```
+
+- **5c.** Rewrite your solution in the last part using base R. Hint: `tapply()` gives probably the easiest route here. Note: your code here shouldn't be too much more complicated than your code in the last part.
+
+```{r q5c}
+result_men <- with(sprint.m.df, tapply(Time, Country, min))
+result_women <- with(sprint.w.df, tapply(Time, Country, min))
+combined_result <- sort(c(result_men, result_women))
+
+
+head(combined_result, 10)
+```
+
+- **5d.** Using `dplyr` functions, compute, for each country, the quadruple: name, city, country, and time, corresponding to the athlete with the fastest time among athletes from that country. Do this for each of the men's and women's data sets, and display the first 10 rows of the result, ordered by increasing time. If there are ties, then show all the results that correspond to the fastest time. Hint: consider using `select()` from the `dplyr` library.
+
+```{r q5d}
+result_men <- sprint.m.df %>%
+  group_by(Country) %>%
+  filter(Time == min(Time)) %>%
+  select(Name, City, Country, Time) %>%
+  arrange(Time) %>%
+  head(10)
+
+result_women <- sprint.w.df %>%
+  group_by(Country) %>%
+  filter(Time == min(Time)) %>%
+  select(Name, City, Country, Time) %>%
+  arrange(Time) %>%
+  head(10)
+
+result_men
+result_women
+```
+
+- **5e.** Rewrite your solution in the last part using base R. Hint: there are various routes to go; one strategy is to use `split()`, followed by `lapply()` with a custom function call, and then `rbind()` to get things in a data frame form. Note: your code here will probably be more complicated, or at least less intuitive, than your code in the last part.
+
+```{r q5e}
+result_men_base <- do.call(rbind, lapply(split(sprint.m.df, 
+                  sprint.m.df$Country), function(x) {
+  x[x$Time == min(x$Time), c("Name", "City", "Country", "Time")]
+}))
+
+result_women_base <- do.call(rbind, lapply(split(sprint.w.df, 
+                  sprint.w.df$Country), function(x) {
+  x[x$Time == min(x$Time), c("Name", "City", "Country", "Time")]
+}))
+
+
+combined_result_base <- rbind(result_men_base, result_women_base)
+combined_result_base <- combined_result_base[order(combined_result_base$Time), ]
+
+
+head(combined_result_base, 10)
+```
